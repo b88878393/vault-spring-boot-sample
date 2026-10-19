@@ -1,0 +1,134 @@
+# ---------------------------------------------------------------------------------------------------------------------
+# vault-spring-boot-sample - main configuration
+#
+# Secrets do NOT live in this file. They are pulled from HashiCorp Vault at startup by Spring Cloud Vault:
+#   * KV v2 secrets  secret/vault-spring-boot-sample[/<profile>]  ->  app.*, partner.api-key
+#   * Dynamic DB credentials  database/creds/app-readwrite        ->  spring.datasource.username/password
+# Everything that is environment-specific can be overridden with environment variables (see README).
+# ---------------------------------------------------------------------------------------------------------------------
+spring:
+  application:
+    name: vault-spring-boot-sample
+
+  cloud:
+    vault:
+      uri: ${VAULT_ADDR:http://localhost:8200}
+      fail-fast: true
+      # AppRole: the machine-oriented auth method. role_id + secret_id are injected through the environment
+      # (written to .env by scripts/vault-init.sh). The "dev" profile switches to token authentication.
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID:}
+        secret-id: ${VAULT_SECRET_ID:}
+        app-role-path: approle
+      # Renew the Vault login token before it expires and re-login when it can no longer be renewed.
+      session:
+        lifecycle:
+          enabled: true
+          refresh-before-expiry: 10s
+          expiry-threshold: 20s
+
+      # (1) Static secrets from the KV v2 engine mounted at "secret/". Spring Cloud Vault reads, in order of
+      # increasing precedence: secret/application, secret/vault-spring-boot-sample,
+      # secret/vault-spring-boot-sample/<active profile>.
+      kv:
+        enabled: true
+        backend: secret
+        application-name: vault-spring-boot-sample
+        default-context: application
+        profile-separator: /
+
+      # (3) Dynamic PostgreSQL credentials from the database secrets engine, mapped onto the datasource.
+      database:
+        # Indirection so that DatabaseImportRefreshGuard can keep /actuator/refresh from requesting a second set
+        # of credentials. To switch dynamic DB credentials off, set sample.vault.database.import-enabled=false.
+        enabled: ${sample.vault.database.import-enabled:true}
+        backend: database
+        role: app-readwrite
+        username-property: spring.datasource.username
+        password-property: spring.datasource.password
+
+      # Lease lifecycle for secrets obtained through spring.config.import (the database credentials):
+      # renew them in the background before they expire.
+      config:
+        lifecycle:
+          enabled: true
+          min-renewal: 10s
+          expiry-threshold: 1m
+
+    refresh:
+      # Carry DatabaseImportRefreshGuard's property source into the environment built for a refresh.
+      additional-property-sources-to-retain: vaultDatabaseImportRefreshGuard
+
+    discovery:
+      client:
+        composite-indicator:
+          # This sample uses no service discovery; hide the "UNKNOWN" discoveryComposite health component.
+          enabled: false
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:appdb}
+    # username/password: provided by Vault (see spring.cloud.vault.database above)
+    hikari:
+      pool-name: vault-sample-pool
+      # Every Vault-generated user is a member of the NOLOGIN group role "app_owner". Switching to it makes all
+      # objects owned by app_owner, so tables survive credential rotation and revocation of old users.
+      connection-init-sql: SET ROLE app_owner
+      maximum-pool-size: 5
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+  flyway:
+    enabled: true
+
+# Application settings. The values below are fallbacks only - the real values come from Vault.
+app:
+  greeting: "Hello from application.yml (Vault value not loaded)"
+  max-note-length: 1000
+  transit:
+    backend: transit
+    key-name: notes
+  secrets:
+    auto-refresh:
+      # (5) Periodically re-read Vault KV secrets (ContextRefresher). Alternative: POST /actuator/refresh.
+      enabled: ${APP_SECRETS_AUTO_REFRESH:false}
+      interval: ${APP_SECRETS_AUTO_REFRESH_INTERVAL:5m}
+
+partner:
+  base-url: https://partner.example.com
+  # api-key: provided by Vault (secret/vault-spring-boot-sample -> partner.api-key)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # "refresh" lets you reload Vault KV secrets at runtime. Protect it (Spring Security) in production!
+        include: health,info,refresh
+  endpoint:
+    health:
+      # Demo setting. Use "when-authorized" in production.
+      show-details: always
+  health:
+    vault:
+      enabled: true
+
+logging:
+  level:
+    org.springframework.vault: INFO
+    org.springframework.cloud.vault: INFO
+
+---
+# Load Vault as a configuration source (Spring Boot ConfigData API). Without the "optional:" prefix the application
+# refuses to start when Vault cannot be reached - usually what you want for secrets.
+#
+# The import lives in a profile-activated document on purpose: imports of plain documents are processed *before*
+# profiles are activated, so profile-specific Vault settings (the token authentication of the "dev" profile) would
+# be ignored. The "dev" profile declares its own import in application-dev.yml.
+spring:
+  config:
+    activate:
+      on-profile: "!dev"
+    import: vault://

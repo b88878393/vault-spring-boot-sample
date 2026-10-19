@@ -1,0 +1,77 @@
+# ---------------------------------------------------------------------------------------------------------------------
+# Local quickstart: Vault (dev mode) + PostgreSQL + the sample application.
+#
+#   docker compose up -d                          # Vault + PostgreSQL
+#   ./scripts/vault-init.sh                       # configure Vault, write AppRole credentials to .env
+#   docker compose --profile app up -d --build    # build and start the application
+#
+# WARNING: Vault runs in DEV MODE - in-memory storage, auto-unsealed, plain HTTP and a well-known root token.
+# Everything in Vault is lost when the container restarts (re-run the init script). Never use this in production;
+# see "Production hardening" in the README.
+# ---------------------------------------------------------------------------------------------------------------------
+name: vault-spring-boot-sample
+
+services:
+  vault:
+    image: hashicorp/vault:2.2.0
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
+    environment:
+      # DEMO root token for the dev server only.
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN:-dev-only-root-token}
+      VAULT_ADDR: http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "127.0.0.1:8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: postgres
+      # DEMO password for the local superuser. The application never uses it - it gets dynamic credentials.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-demo-password}
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d appdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    profiles: ["app"]
+    build: .
+    image: vault-spring-boot-sample:local
+    depends_on:
+      vault:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: http://vault:8200
+      # Written to .env by scripts/vault-init.sh (docker compose reads .env automatically).
+      VAULT_ROLE_ID: ${VAULT_ROLE_ID:-}
+      VAULT_SECRET_ID: ${VAULT_SECRET_ID:-}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: appdb
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  pgdata:

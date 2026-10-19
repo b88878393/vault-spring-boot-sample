@@ -1,0 +1,23 @@
+# ---------------------------------------------------------------------------------------------------------------------
+# "dev" profile: token authentication instead of AppRole, for local development against the Vault dev server.
+#
+#   SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
+#
+# The default token is the DEMO root token of the dev-mode Vault in docker-compose.yml. Never use a root token
+# outside a throwaway local dev server.
+# ---------------------------------------------------------------------------------------------------------------------
+spring:
+  config:
+    import: vault://
+  cloud:
+    vault:
+      authentication: TOKEN
+      token: ${VAULT_TOKEN:dev-only-root-token}
+      session:
+        lifecycle:
+          # The dev root token never expires, so there is nothing to renew.
+          enabled: false
+
+logging:
+  level:
+    io.github.b88878393.vaultsample: DEBUG
