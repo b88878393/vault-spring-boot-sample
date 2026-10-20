@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build ----------------------------------------------------------------------------------------------------------
-FROM eclipse-temurin:21-jdk-noble AS build
+FROM eclipse-temurin:24-jdk-noble AS build
 WORKDIR /src
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
@@ -11,7 +11,7 @@ RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
     && java -Djarmode=tools -jar target/vault-spring-boot-sample-*.jar extract --layers --launcher --destination /extracted
 
 # ---- runtime --------------------------------------------------------------------------------------------------------
-FROM eclipse-temurin:21-jre-noble
+FROM eclipse-temurin:24-jre-noble
 RUN groupadd --system app && useradd --system --gid app --no-create-home app \
     && apt-get update && apt-get install -y --no-install-recommends wget && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
