@@ -13,7 +13,7 @@ name: vault-spring-boot-sample
 
 services:
   vault:
-    image: hashicorp/vault:2.2.0
+    image: hashicorp/vault:2.2.1
     command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
     environment:
       # DEMO root token for the dev server only.
