@@ -39,7 +39,7 @@
     <properties>
         <java.version>21</java.version>
         <!-- Spring Cloud release train that matches Spring Boot 3.5.x (brings Spring Cloud Vault 4.3.x) -->
-        <spring-cloud.version>2025.0.3</spring-cloud.version>
+        <spring-cloud.version>2025.1.4</spring-cloud.version>
         <!-- Pinned container images used by the integration tests (keep in sync with docker-compose.yml) -->
         <vault.image>hashicorp/vault:2.2.0</vault.image>
         <postgres.image>postgres:17.11-alpine</postgres.image>
